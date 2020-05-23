@@ -1,0 +1,1 @@
+# yolo-fire-detection-model
