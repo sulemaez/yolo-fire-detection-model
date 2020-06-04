@@ -1,27 +1,15 @@
 # Using Android IP Webcam video .jpg stream (tested) in Python2 OpenCV3
-
-import urllib.request as request
+import argparse
 import cv2 as cv
 import numpy as np
 import time
-import socketio
-import base64
 
-#setup socket io to transfer images
-sio = socketio.Client()
+#parse arguments
+ap = argparse.ArgumentParser()
+ap.add_argument("-i", "--image" , help="path to input image")
+ap.add_argument("-v", "--video",  help="path to input video")    
 
-@sio.event
-def connect():
-    sio.emit('setname','camera')
-
-@sio.event
-def connect_error():
-    print("The connection failed!")
-    print("\n")
-@sio.event
-def disconnect():
-    print("I'm disconnected!")
-
+args = vars(ap.parse_args())
 
 
 #setup the model params
@@ -30,6 +18,7 @@ mms_threshold = 0.40
 inp_width = 416
 inp_height = 416
 
+#get the class from file
 classes_file = 'fire.txt'
 classes = None
 
@@ -51,6 +40,8 @@ def getOutputsNames(net):
     layer_names = net.getLayerNames()
     return [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 
+
+#gets all the detectedt objects and their bouding boxes
 def postProcess(img,outs):
     frame_height = img.shape[0]
     frame_width = img.shape[1]
@@ -95,6 +86,7 @@ def postProcess(img,outs):
         drawPred(class_ids[i],confidences[i],left,top,left + width,top + height,img) 
 
 
+#draws the bounding boxes 
 def drawPred(class_id,conf,left,top,right,bottom,img):
     cv.rectangle(img,(left,top),(right,bottom),(255,178,50),3)
 
@@ -108,41 +100,54 @@ def drawPred(class_id,conf,left,top,right,bottom,img):
     cv.putText(img,label,(left,top),cv.FONT_HERSHEY_PLAIN,1,(255,255,255),1) 
 
 
-def sendImage(frame):
-    retval, buffer = cv.imencode('.png', frame)
-    jpg_as_text = base64.b64encode(buffer)
-    sio.emit('image',str(jpg_as_text)[2:-1])
-
-
-#URL to camera
-url = 'http://192.168.43.1:8080/shot.jpg'
-sio.connect('http://localhost:5000')
-
-while True:
-   
-    # Use urllib to get the image from the IP camera
-    imgResp = request.urlopen(url)
-   
-    # Numpy to convert into a array
-    imgNp = np.array(bytearray(imgResp.read()),dtype=np.uint8)
-
+#passes the image through the model and displays result
+def getPrediction(img):
     # Finally decode the array to OpenCV usable format ;) 
-    img = cv.imdecode(imgNp,-1)
-    
     blob = cv.dnn.blobFromImage(img,1/255,(inp_width,inp_height),[0,0,0],1,crop=False)
-
     net.setInput(blob)
 
     outs = net.forward(getOutputsNames(net))
 
     postProcess(img,outs)
 
-    sendImage(img)
-  
-    #send model
-    time.sleep(0.1) 
+    cv.imshow('result',img)
+)
 
-    # Quit if q is pressed
-    if cv.waitKey(1) & 0xFF == ord('q'):
-        break
+if args["image"] is not None and args['image'] is not "":
+
+    img = cv.imread(args["image"])
+
+    getPrediction(img)
+    
+    cv.waitKey(0) # waits until a key is pressed
+    cv.destroyAllWindows()
+
+elif args["video"] is not None and args['video'] is not "":
+
+    vs = cv.VideoCapture(args["video"]) 
+
+    # loop over frames from the video file stream
+    while cv.waitKey(1) < 0:
+
+        # read the next frame from the file
+        (grabbed, frame) = vs.read()
+
+        # if the frame was not grabbed, then we have reached the end
+        # of the stream
+        if not grabbed:
+            break  
+
+        getPrediction(frame)
+       
+    cv.destroyAllWindows()    
+    
+
+
+
+
+
+    
+
+  
+ 
 
